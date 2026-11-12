@@ -5,12 +5,15 @@ authorized business-text review and result downloads.
 
 ## Release status
 
-**0.3.0rc1 — unpublished release candidate.**
+**0.3.0rc1 — release candidate, not a stable release.**
+
+See the [0.3.0rc1 release notes](docs/releases/0.3.0rc1.md) for capabilities,
+authorization boundaries and validation limits.
 
 Official repository: <https://github.com/lumenflow-ai/lumenflow-skill>.
-The repository is currently **private**. Installation requires GitHub read access
-and working Git authentication on your machine. This candidate is not a stable
-release; verify the installed script reports `0.3.0rc1`.
+Verify the installed script reports `0.3.0rc1`. Repository visibility and
+published tags are shown on GitHub; these instructions do not imply that a
+release has been published.
 
 ## Install
 
@@ -21,11 +24,13 @@ npx --yes skills@1.8.1 add lumenflow-ai/lumenflow-skill --skill lumenflow --agen
 ```
 
 Choose only the clients you use by adjusting `--agent`. This installs into user
-Skill directories; it does not configure an API credential. If private repository
-access fails, resolve GitHub access first; never paste GitHub credentials or
-Lumenflow tokens into an assistant conversation.
+Skill directories; it does not configure an API credential. While the repository
+is private, installation requires GitHub read access and
+working Git authentication. Once public, reading the repository does not require
+a GitHub account. Never paste GitHub credentials or Lumenflow tokens into an
+assistant conversation.
 
-Alternatively, clone the repository using your existing Git authentication and
+Alternatively, clone the repository (authenticate if it is private) and
 install its `lumenflow/` directory using your client's local Skill installation
 method. Run these checks from the checkout (and verify the equivalent installed
 script path reported by your installer):
@@ -36,8 +41,10 @@ python3 lumenflow/scripts/lumenflow.py --help
 ```
 
 Installation does not grant API permissions or authorize billable work. Configure
-the Lumenflow API token separately using the guidance below. Anonymous remote
-installation is unavailable while the repository remains private.
+the Lumenflow API token separately using the guidance below. The command above
+installs the repository default branch, not a frozen release tag. Check the
+installed version before use; do not assume installing an update grants new
+permissions or authorizes generation.
 
 ## Requirements and authorization
 
