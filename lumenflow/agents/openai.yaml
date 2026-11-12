@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lumenflow"
+  short_description: "Create Lumenflow projects and Seedance 2.5 videos"
+  default_prompt: "Use $lumenflow to create a standard video project or an isolated Seedance 2.5 reference-driven video."
