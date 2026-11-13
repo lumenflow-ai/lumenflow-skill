@@ -99,3 +99,8 @@ secrets. Live acceptance and anonymous installation remain separate gates.
 The service enforces authorization, resource ownership, billing, idempotency and
 public response filtering. A public or modified client cannot replace those
 controls. See [SECURITY.md](SECURITY.md).
+
+## License
+
+Distributed under the [MIT License](LICENSE).
+Copyright (c) 2026 Lumenflow.
