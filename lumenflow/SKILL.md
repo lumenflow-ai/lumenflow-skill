@@ -1,6 +1,6 @@
 ---
 name: lumenflow
-description: Use the Lumenflow public API for video projects, script-to-storyboard review, batch scene prompt writes, empty episode creation, asset imports, failure queries, generation, progress and downloads. Requires Skill eligibility and explicitly selected Token scopes and resources. Basic project capabilities are owner-scoped; reading business text requires an independent scope. Also supports isolated owner-only Seedance 2.5 jobs using local image/audio references.
+description: Use the Lumenflow public API for video projects, script-to-storyboard review, batch scene prompt writes, empty episode creation, asset imports, failure queries, generation, progress and downloads. Requires Skill eligibility and explicitly selected Token scopes and resources. Basic project capabilities are owner-scoped; reading business text requires an independent scope. Supports canvas reads, edits, uploads, model discovery, price checks and authorized downloads. Also supports isolated owner-only Seedance 2.5 jobs using local image/audio references.
 ---
 
 # Lumenflow
@@ -21,7 +21,7 @@ The service must independently enforce authorization, ownership, scopes, quotas,
 
 ## Prepare
 
-1. Check that `LUMENFLOW_API_KEY` exists without displaying its value.
+1. For offline setup, run `--version` and `--help` without a Token. Before any API request, check that `LUMENFLOW_API_KEY` exists without displaying its value. `auth-check` is a network request, not an offline configuration check.
 2. Use the built-in official production API URL. Honor `LUMENFLOW_API_BASE_URL` only when its host passes the client's compiled official allowlist.
 3. Read [references/public-api.md](references/public-api.md) before the first request. Read [references/batch.md](references/batch.md) before batch editing, empty creation or failure queries, and [references/seedance25.md](references/seedance25.md) before a Seedance 2.5 request.
 4. Run commands from this Skill directory with `python3 scripts/lumenflow.py`.
@@ -43,7 +43,11 @@ For canvas or workflow model selection, including subsidized offerings, read [re
 
 | User intent | Command |
 |---|---|
-| Verify setup | `auth-check` |
+| Verify installation offline | `--version` / `--help` |
+| Verify Token with the service (network request) | `auth-check` |
+| List canvas models or image prices without generating | `canvas-models CANVAS_ID` |
+| Quote canvas video without generating | `canvas-quote CANVAS_ID --file FILE` |
+| Download a finished canvas result | `canvas-download CANVAS_ID MEDIA_ID --output FILE` |
 | Compare original scripts and current storyboards | `review-materials PROJECT_ID --episode-from 31 --episode-to 40` |
 | See approved styles | `styles` |
 | Create only | `create` |
@@ -79,7 +83,9 @@ Keep the workflows separate:
 - Treat an explicit request to "generate", "make", or "finish the video" as authorization for normal generation of one project.
 - Add `--generate` to `workflow` only when that authorization is explicit.
 - Add `--confirm-generation` to `seedance25-create` or `seedance25-workflow` only when one Seedance 2.5 generation is explicitly authorized.
-- Stop after parsing when the user asked only to create, import, or parse.
+- Creating or importing alone does not authorize parsing. Use `create` or `create-empty` and stop; `workflow` also parses and must not be used for a create-only request. Parsing can consume credits.
+- A non-billable or quote-only request never authorizes parsing, generation, retry generation, or a workflow that performs them. Stop after listing models or quoting. For canvas images, report the model's per-request price; the canvas quote endpoint is for video.
+- When parsing is explicitly authorized, stop after parsing unless generation is separately authorized.
 - Confirm again before generating multiple projects, performing a large retry, or continuing after the service reports an unusually high estimated cost.
 - Every create, parse, upload, batch, generation and workflow submission requires an explicit `--idempotency-key`. Reuse the original key when resuming the same submission. Never invent a new key for a retry whose original outcome is unknown.
 
@@ -96,7 +102,7 @@ Keep the workflows separate:
 - Report the public project ID and project URL for standard projects, or only the public `swj_*` job ID for Seedance 2.5.
 - Report total, completed, running, pending, and failed scene counts when present.
 - Report public error codes and actionable next steps without guessing the internal cause.
-- Download only through `download` or `seedance25-download`. Both accept only official API result-ticket URLs, refuse redirects and omit Bearer authentication. Downloads default to a 500,000,000-byte maximum and a 300-second body deadline; `--max-bytes` may lower the limit.
+- Download only through `download`, `canvas-download`, or `seedance25-download`. These accept only official API result-ticket URLs, refuse redirects and omit Bearer authentication. Downloads default to a 500,000,000-byte maximum and a 300-second body deadline; `--max-bytes` may lower the limit.
 - Map each downloaded asset ID to its local filename.
 - Do not include signed download URLs, tokens, or local environment details in the response.
 
