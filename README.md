@@ -46,6 +46,29 @@ installs the repository default branch, not a frozen release tag. Check the
 installed version before use; do not assume installing an update grants new
 permissions or authorizes generation.
 
+## First conversation
+
+Start a new conversation after installation so the client can discover the Skill.
+Ask Codex to use `$lumenflow`, or invoke `/lumenflow` in Claude Code. For example:
+
+> Check the installed Lumenflow version and help locally. Do not access the API,
+> parse scripts, upload files or generate content. Do not display credentials.
+
+The script paths above are relative to a repository checkout. After installation,
+use the installed `lumenflow/` directory reported by the installer and run
+`python3 scripts/lumenflow.py ...` from that directory. Do not assume that the
+conversation's working directory contains `scripts/lumenflow.py`.
+
+`--version`, `--help` and subcommand `--help` run offline without a Token.
+`auth-check` contacts the service; installation success does not verify API access.
+If the Skill is missing, check the selected client and installation location,
+then start a new conversation. Do not reinstall repeatedly or expose credentials.
+
+For price-only requests, explicitly say not to parse or generate. Canvas image
+prices come from `canvas-models`; `canvas-quote` is for video and currently needs
+`canvas:generation:write`, despite quoting itself not generating content. A scope
+that permits generation is not user consent to generate.
+
 ## Requirements and authorization
 
 - Python **3.11+**; runtime uses only the standard library.
@@ -104,3 +127,5 @@ controls. See [SECURITY.md](SECURITY.md).
 
 Distributed under the [MIT License](LICENSE).
 Copyright (c) 2026 Lumenflow.
+
+For human dialogue acceptance, use the [non-billable checklist](docs/acceptance/non-billable-dialogue.md).

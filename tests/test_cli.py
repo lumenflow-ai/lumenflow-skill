@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SCRIPTS_DIR = Path(__file__).parents[1] / "lumenflow" / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -422,6 +422,29 @@ class MainTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertNotIn("lf_private", stdout.getvalue())
         self.assertTrue(json.loads(stdout.getvalue())["ok"])
+
+
+class OfflineConversationBoundaryTests(unittest.TestCase):
+    def test_help_and_version_never_construct_api_client(self):
+        for argv in (["--version"], ["--help"], ["auth-check", "--help"],
+                     ["canvas-models", "--help"], ["canvas-quote", "--help"],
+                     ["canvas-download", "--help"]):
+            with self.subTest(argv=argv), patch.dict(os.environ, {}, clear=True), \
+                    redirect_stdout(io.StringIO()), \
+                    patch.object(cli, "ClientConfig") as config:
+                with self.assertRaises(SystemExit) as result:
+                    cli.main(argv)
+                self.assertEqual(result.exception.code, 0)
+                config.from_env.assert_not_called()
+
+    def test_missing_token_stops_before_transport_creation(self):
+        for argv in (["auth-check"], ["canvas-models", "canvas_example"]):
+            with self.subTest(argv=argv), patch.dict(os.environ, {}, clear=True), \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+                factory = Mock(side_effect=AssertionError("No API transport"))
+                self.assertNotEqual(cli.main(argv, client_factory=factory), 0)
+                factory.assert_not_called()
+                self.assertIn("authentication_required", err.getvalue())
 
 
 if __name__ == "__main__":
