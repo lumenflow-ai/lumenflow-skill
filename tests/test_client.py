@@ -353,12 +353,14 @@ class ClientContractTests(unittest.TestCase):
         )
         client.parse_project(
             "prj_123",
+            quote_fingerprint="spq1.1800000120." + "a"*64,
             idempotency_key="idem-parse-123",
         )
         client.progress("prj_123")
         client.generate(
             "prj_123",
             scene_ids=["scn_1"],
+            quote_fingerprint="spq1.1800000120." + "a"*64, selection_id="b"*64,
             idempotency_key="idem-generate-123",
         )
         client.assets("prj_123")
@@ -388,6 +390,7 @@ class ClientContractTests(unittest.TestCase):
             duration_seconds=8,
             aspect_ratio="16:9",
             asset_ids=["swa_123"],
+            quote_fingerprint="spq1.1800000120." + "a"*64,
             idempotency_key="seedance-create-123",
         )
         client.seedance25_job("swj_123")

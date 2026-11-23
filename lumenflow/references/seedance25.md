@@ -17,6 +17,7 @@ Use this contract only for a reference-driven single video. Standard Lumenflow p
 |---|---|---|
 | Limits and pricing | `GET /workbenches/seedance-2.5/capabilities` | `seedance25:read` |
 | Upload reference | `POST /workbenches/seedance-2.5/assets` | `seedance25:asset:write` |
+| Quote one job | `POST /workbenches/seedance-2.5/quotes` | `seedance25:generation:write` |
 | Create job | `POST /workbenches/seedance-2.5/jobs` | `seedance25:generation:write` |
 | Read job | `GET /workbenches/seedance-2.5/jobs/{job_id}` | `seedance25:read` |
 | Result grants | `GET /workbenches/seedance-2.5/jobs/{job_id}/assets` | `seedance25:read` |
@@ -29,6 +30,7 @@ Create jobs with `Idempotency-Key` and exactly:
 {
   "prompt": "User-authored prompt",
   "duration_seconds": 10,
+  "quote_fingerprint": "<confirmed quote>",
   "aspect_ratio": "16:9",
   "asset_ids": ["swa_..."]
 }
@@ -38,7 +40,7 @@ Duration is an integer from 4 through 30. Aspect ratio is one of `16:9`, `9:16`,
 
 ## Consent and recovery
 
-- Require explicit authorization for one billable generation and pass `--confirm-generation`.
+- Quote the exact duration and aspect ratio with `seedance25-quote`, show the total and wait for the next user reply. Only then pass the fingerprint and `--confirm-generation`.
 - Reuse the same idempotency root when resuming an upload or job submission whose result is unknown.
 - Poll only `pending`, `queued`, `generating`, `completed`, or `failed`.
 - Stop after 30 minutes and return `swj_*`; do not create a replacement job.

@@ -113,6 +113,19 @@ def validate_endpoint_response(method, path, value):
             from _models import validate_models_response
         validate_models_response(route, value)
         return
+    if (method == "GET" and re.fullmatch(r"/projects/[A-Za-z0-9_-]+/parse-quote", route)
+            or method == "POST" and route == "/workbenches/seedance-2.5/quotes"):
+        fields = {"total_credits": number, "quote_fingerprint": text, "expires_at": number}
+        if route.endswith("/parse-quote"):
+            fields.update(project_id=text, script_credits=number, storyboard_credits=number)
+        if not isinstance(value, dict) or set(value) != set(fields):
+            blocked()
+        check(value, fields)
+        if not re.fullmatch(r"spq1\.\d{10}\.[a-f0-9]{64}", value["quote_fingerprint"]):
+            blocked()
+        if "project_id" in fields and value["project_id"] != route.split("/")[2]:
+            blocked()
+        return
     schema = None
     if method == "GET" and route == "/session":
         schema = {"authenticated": boolean, "scopes": [text], "expires_at": text}

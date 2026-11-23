@@ -59,6 +59,8 @@ use the installed `lumenflow/` directory reported by the installer and run
 `python3 scripts/lumenflow.py ...` from that directory. Do not assume that the
 conversation's working directory contains `scripts/lumenflow.py`.
 
+`credential-status` is an offline boolean check for the current process. If missing, configure the client privately and restart it. Never inspect a credential store or export a Token through the assistant.
+
 `--version`, `--help` and subcommand `--help` run offline without a Token.
 `auth-check` contacts the service; installation success does not verify API access.
 If the Skill is missing, check the selected client and installation location,
@@ -102,8 +104,7 @@ If a request's outcome is unknown, keep the same key and exact inputs; query
 known resource status or resume the same operation. Never change the key merely
 to get past an error. A workflow uses that key as the root for stable step keys.
 
-Generation needs user authorization; selected-model generation additionally
-requires a current quote and `--confirm-generation`. See [SKILL.md](lumenflow/SKILL.md)
+Parsing and generation each require a current quote and a subsequent user confirmation. Use `parse-quote` before `--confirm-parse` and the appropriate model/job quote before `--confirm-generation`. See [SKILL.md](lumenflow/SKILL.md)
 and its linked contracts for commands and scope requirements.
 
 ## Local verification

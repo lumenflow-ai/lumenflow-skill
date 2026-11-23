@@ -39,6 +39,7 @@ The client refuses:
 | Verify token | `GET /session` | Any public scope |
 | List public styles | `GET /styles` | `style:read` |
 | Create project | `POST /projects` | `project:write` |
+| Quote parsing | `GET /projects/{project_id}/parse-quote` | `project:write` |
 | Parse project | `POST /projects/{project_id}/parse` | `project:write` |
 | Read progress | `GET /projects/{project_id}/progress` | `project:read` |
 | Read originals and storyboard business text | `GET /projects/{project_id}/review-materials` | `project:content:read` |
@@ -121,7 +122,7 @@ Do not accept a user, owner, organization, provider, channel, or internal model 
 
 Required header: `Idempotency-Key`
 
-Request body: `{}`.
+Request body: `{"quote_fingerprint":"<confirmed parse quote>"}`. Obtain it from `GET /projects/{project_id}/parse-quote`, show the script, first-episode and total credits, and wait for the user to accept.
 
 ```json
 {
@@ -162,10 +163,10 @@ Do not return script text, prompts, provider data, upstream errors, stack traces
 
 Required header: `Idempotency-Key`
 
-Generate all eligible scenes:
+Use the current quote’s selection ID and fingerprint after the user accepts. Generate all eligible scenes:
 
 ```json
-{"mode": "all"}
+{"mode": "all", "selection_id": "<quoted selection>", "quote_fingerprint": "<confirmed quote>"}
 ```
 
 Generate selected scenes:
@@ -173,6 +174,8 @@ Generate selected scenes:
 ```json
 {
   "mode": "selected",
+  "selection_id": "<quoted selection>",
+  "quote_fingerprint": "<confirmed quote>",
   "scene_ids": ["scn_public_01", "scn_public_02"]
 }
 ```
@@ -180,7 +183,7 @@ Generate selected scenes:
 Retry failed scenes:
 
 ```json
-{"mode": "retry_failed"}
+{"mode": "retry_failed", "selection_id": "<quoted selection>", "quote_fingerprint": "<confirmed quote>"}
 ```
 
 Response:

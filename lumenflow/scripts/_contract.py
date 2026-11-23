@@ -123,6 +123,12 @@ class LumenflowError(Exception):
         return {"ok": False, "error": error}
 
 
+def require_quote(value: str | None) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"spq1\.\d{10}\.[a-f0-9]{64}", value):
+        raise LumenflowError("quote_changed", "Get a current quote and confirm the displayed credits first.")
+    return value
+
+
 def validate_base_url(value: str) -> str:
     value = value.strip().rstrip("/")
     if not value:

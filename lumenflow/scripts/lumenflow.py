@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import random
 import sys
 import time
@@ -92,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("new-key", help="Generate an operation key offline; retain and reuse it with identical input after uncertainty.")
+    commands.add_parser("credential-status", help="Offline presence check in this process. Never displays the credential.")
     commands.add_parser("auth-check", help="Verify the configured token.")
     commands.add_parser("styles", help="List approved public project styles.")
 
@@ -122,8 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--aspect-ratio")
     create.add_argument("--idempotency-key", required=True)
 
+    parse_quote = commands.add_parser("parse-quote", help="Quote script parsing and first episode storyboards.")
+    parse_quote.add_argument("project_id")
     parse = commands.add_parser("parse", help="Start project script parsing.")
     parse.add_argument("project_id")
+    parse.add_argument("--quote-fingerprint")
+    parse.add_argument("--confirm-parse", action="store_true")
     parse.add_argument("--idempotency-key", required=True)
 
     progress = commands.add_parser("progress", help="Read public project progress.")
@@ -133,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     models.add_argument("project_id")
     model_quote = commands.add_parser("generation-quote", help="Quote selected model and eligible scenes without generating.")
     model_quote.add_argument("project_id")
-    model_quote.add_argument("--selection-id", required=True)
+    model_quote.add_argument("--selection-id", help="Omit to quote the project default model.")
     quote_scenes=model_quote.add_mutually_exclusive_group()
     quote_scenes.add_argument("--scene-id",action="append",dest="scene_ids")
     quote_scenes.add_argument("--retry-failed",action="store_true")
@@ -164,12 +170,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_script_arguments(workflow)
     workflow.add_argument("--title", required=True)
+    workflow.add_argument("--confirm-parse", action="store_true")
+    workflow.add_argument("--parse-quote-fingerprint")
+    workflow.add_argument("--confirm-generation", action="store_true")
+    workflow.add_argument("--quote-fingerprint")
+    workflow.add_argument("--selection-id")
     workflow.add_argument("--style-id")
     workflow.add_argument("--aspect-ratio")
     workflow.add_argument(
         "--generate",
         action="store_true",
-        help="Explicitly authorize generation for this one project.",
+        help="Request the generation stage and its separate quote.",
     )
     workflow.add_argument(
         "--no-wait-generation",
@@ -199,6 +210,10 @@ def build_parser() -> argparse.ArgumentParser:
     seedance_upload.add_argument("file", type=Path)
     seedance_upload.add_argument("--idempotency-key", required=True)
 
+    seedance_quote = commands.add_parser("seedance25-quote", help="Quote one job before uploading or submitting.")
+    seedance_quote.add_argument("--duration", type=int, required=True)
+    seedance_quote.add_argument("--aspect-ratio", required=True)
+
     seedance_create = commands.add_parser(
         "seedance25-create",
         help="Create one isolated Seedance 2.5 video job.",
@@ -206,6 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_seedance25_arguments(seedance_create)
     seedance_create.add_argument("--asset-id", action="append", dest="asset_ids")
     seedance_create.add_argument("--idempotency-key", required=True)
+    seedance_create.add_argument("--quote-fingerprint")
     seedance_create.add_argument(
         "--confirm-generation",
         action="store_true",
@@ -240,6 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Local image or audio file. Repeat for multiple references.",
     )
     seedance_workflow.add_argument("--idempotency-key", required=True)
+    seedance_workflow.add_argument("--quote-fingerprint")
     seedance_workflow.add_argument("--confirm-generation", action="store_true")
     seedance_workflow.add_argument("--no-wait", action="store_false", dest="wait")
     seedance_workflow.set_defaults(wait=True)
@@ -276,6 +293,10 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "credential-status":
+        configured = bool(os.environ.get("LUMENFLOW_API_KEY", "").strip())
+        _write_json({"configured": configured}, pretty=args.pretty, stream=sys.stdout)
+        return 0
     if args.command == "new-key":
         _write_json({"idempotency_key": new_idempotency_key()}, pretty=args.pretty, stream=sys.stdout)
         return 0
@@ -337,9 +358,14 @@ def execute(args: argparse.Namespace, client: LumenflowClient) -> Any:
             aspect_ratio=args.aspect_ratio,
             idempotency_key=args.idempotency_key,
         )
+    if args.command == "parse-quote":
+        return client.parse_quote(args.project_id)
     if args.command == "parse":
+        if not args.confirm_parse or not args.quote_fingerprint:
+            raise LumenflowError("parse_confirmation_required", "Show the parse quote and wait for confirmation.")
         return client.parse_project(
             args.project_id,
+            quote_fingerprint=args.quote_fingerprint,
             idempotency_key=args.idempotency_key,
         )
     if args.command == "progress":
@@ -349,7 +375,7 @@ def execute(args: argparse.Namespace, client: LumenflowClient) -> Any:
     if args.command == "generation-quote":
         return client.generation_quote(args.project_id,args.selection_id,scene_ids=args.scene_ids,retry_failed=args.retry_failed)
     if args.command == "generate":
-        if args.selection_id and not args.confirm_generation:
+        if not (args.confirm_generation and args.selection_id and args.quote_fingerprint):
             raise LumenflowError("generation_confirmation_required", "Confirm the selected model and quoted cost before generating.")
         return client.generate(
             args.project_id,
@@ -377,14 +403,17 @@ def execute(args: argparse.Namespace, client: LumenflowClient) -> Any:
             args.file,
             idempotency_key=args.idempotency_key,
         )
+    if args.command == "seedance25-quote":
+        return client.seedance25_quote(args.duration, args.aspect_ratio)
     if args.command == "seedance25-create":
-        _require_generation_consent(args.confirm_generation)
+        _require_generation_consent(args.confirm_generation, args.quote_fingerprint)
         prompt, duration, aspect_ratio = _seedance25_input(args)
         return client.seedance25_create_job(
             prompt=prompt,
             duration_seconds=duration,
             aspect_ratio=aspect_ratio,
             asset_ids=args.asset_ids,
+            quote_fingerprint=args.quote_fingerprint,
             idempotency_key=args.idempotency_key,
         )
     if args.command == "seedance25-status":
@@ -437,8 +466,13 @@ def run_workflow(
     project_id = _project_id(created)
     steps.append({"name": "project_created", "data": created})
 
+    if not args.confirm_parse or not args.parse_quote_fingerprint:
+        return {"project_id": project_id, "awaiting_confirmation": "parse", "quote": client.parse_quote(project_id),
+                "generation_submitted": False, "steps": steps}
+
     parsed = client.parse_project(
         project_id,
+        quote_fingerprint=args.parse_quote_fingerprint,
         idempotency_key=f"{idempotency_root}:parse",
     )
     steps.append({"name": "parse_submitted", "data": parsed})
@@ -469,8 +503,14 @@ def run_workflow(
             "steps": steps,
         }
 
+    if not (args.confirm_generation and args.selection_id and args.quote_fingerprint):
+        return {"project_id": project_id, "awaiting_confirmation": "generation",
+                "quote": client.generation_quote(project_id, args.selection_id), "generation_submitted": False, "steps": steps}
+
     generated = client.generate(
         project_id,
+        selection_id=args.selection_id,
+        quote_fingerprint=args.quote_fingerprint,
         idempotency_key=f"{idempotency_root}:generate",
     )
     steps.append({"name": "generation_submitted", "data": generated})
@@ -660,6 +700,7 @@ def _exit_code(error: LumenflowError) -> int:
     if error.code in {
         "configuration_required",
         "forbidden_parameter",
+        "parse_confirmation_required",
         "generation_confirmation_required",
         "invalid_configuration",
         "invalid_input",

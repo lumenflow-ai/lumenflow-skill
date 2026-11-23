@@ -21,6 +21,50 @@ URL = "https://api.example.com/open/v1/downloads/dlg_" + "a" * 43
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_presence_only_or_missing_credentials_never_expose_a_value(self):
+        from unittest.mock import Mock
+        canary = "synthetic-private-marker"
+        factory = Mock(side_effect=AssertionError("unexpected client creation"))
+        for env in [{"LUMENFLOW_API_KEY": canary}, {}]:
+            out, err = io.StringIO(), io.StringIO()
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, env, clear=True):
+                from contextlib import chdir
+                with chdir(tmp), redirect_stdout(out), redirect_stderr(err):
+                    self.assertEqual(cli.main(["credential-status"], client_factory=factory), 0)
+                    if not env:
+                        self.assertEqual(cli.main(["auth-check"], client_factory=factory), 3)
+                self.assertEqual(list(Path(tmp).iterdir()), [])
+            self.assertEqual(json.loads(out.getvalue()), {"configured": bool(env)})
+            self.assertNotIn(canary, out.getvalue() + err.getvalue())
+            factory.assert_not_called()
+
+    def test_token_cannot_be_persisted_as_business_content_or_uploaded(self):
+        opener = FakeOpener([])
+        client = LumenflowClient(config(), opener=opener)
+        secret = client.config.api_key
+        for request in [lambda: client._request("POST", "/projects", payload={"title": secret}),
+                        lambda: client._request("GET", "/projects/" + secret),
+                        lambda: client._request("POST", "/assets", body=secret.encode(), content_type="text/plain")]:
+            with self.assertRaises(LumenflowError) as caught:
+                request()
+            self.assertNotIn(secret, str(caught.exception))
+        self.assertEqual(opener.requests, [])
+
+    def test_parse_and_workbench_quote_only_validate_before_submission(self):
+        signature = "spq1.1800000120." + "a" * 64
+        reply = {"total_credits": 8.5, "expires_at": 1800000120, "quote_fingerprint": signature}
+        parse_reply = dict(reply, project_id="prj_test", script_credits=6, storyboard_credits=2.5)
+        opener = FakeOpener([FakeResponse(parse_reply), FakeResponse(reply)])
+        client = LumenflowClient(config(), opener=opener)
+        self.assertEqual(client.parse_quote("prj_test"), parse_reply)
+        self.assertEqual(client.seedance25_quote(4, "16:9"), reply)
+        self.assertEqual([r.selector for r in opener.requests],
+                         ["/open/v1/projects/prj_test/parse-quote", "/open/v1/workbenches/seedance-2.5/quotes"])
+        for body in [dict(parse_reply, project_id="prj_other"), dict(parse_reply, total_credits=True),
+                     dict(parse_reply, quote_fingerprint="invalid"), {}]:
+            with self.assertRaises(LumenflowError):
+                validate_endpoint_response("GET", "/projects/prj_test/parse-quote", body)
+
     def test_key_generation_requires_neither_credentials_nor_network(self):
         output = io.StringIO()
         with patch.dict(os.environ, {}, clear=True), redirect_stdout(output):
@@ -45,7 +89,8 @@ class RecoveryTests(unittest.TestCase):
             opener = FakeOpener([TimeoutError("private socket error")])
             client = LumenflowClient(config(max_retries=0), opener=opener)
             with self.assertRaises(LumenflowError) as caught:
-                client.generate("prj_test", idempotency_key="retained-operation-key")
+                client.generate("prj_test", selection_id="a"*64, quote_fingerprint="spq1.1800000120." + "b"*64,
+                                idempotency_key="retained-operation-key")
             self.assertEqual(caught.exception.code, "operation_outcome_unknown")
             self.assertNotIn("private socket", str(caught.exception))
             requests.append(opener.requests[0])
