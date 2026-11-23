@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from ._contract import require_quote
     from ._client import (
         LumenflowClient,
         LumenflowError,
@@ -18,6 +19,7 @@ try:
     )
     from ._downloads import download_seedance25_assets
 except ImportError:
+    from _contract import require_quote
     from _client import (
         LumenflowClient,
         LumenflowError,
@@ -32,12 +34,13 @@ SEEDANCE25_MAX_PROMPT_BYTES = 9_800
 MAX_WAIT_SECONDS = 30 * 60
 
 
-def require_generation_consent(confirmed: bool) -> None:
-    if not confirmed:
+def require_generation_consent(confirmed: bool, fingerprint: str | None) -> None:
+    if not confirmed or not fingerprint:
         raise LumenflowError(
             "generation_confirmation_required",
-            "Seedance 2.5 generation requires --confirm-generation.",
+            "Show the Seedance 2.5 quote and wait for confirmation.",
         )
+    require_quote(fingerprint)
 
 
 def seedance25_input(args: argparse.Namespace) -> tuple[str, int, str]:
@@ -82,7 +85,7 @@ def run_seedance25_workflow(
     monotonic: Callable[[], float] = time.monotonic,
     random_fn: Callable[[], float] = random.random,
 ) -> dict[str, Any]:
-    require_generation_consent(args.confirm_generation)
+    require_generation_consent(args.confirm_generation, args.quote_fingerprint)
     if args.download_dir is not None and not args.wait:
         raise LumenflowError(
             "invalid_input",
@@ -116,6 +119,7 @@ def run_seedance25_workflow(
         duration_seconds=duration,
         aspect_ratio=aspect_ratio,
         asset_ids=asset_ids,
+        quote_fingerprint=args.quote_fingerprint,
         idempotency_key=f"{idempotency_root}:create",
     )
     job_id = _job_id(created)

@@ -254,6 +254,8 @@ def execute_canvas(args: Any, client: Any) -> Any:
         payload=json.loads(raw.decode("utf-8"))
         if not isinstance(payload,dict): invalid()
     except (OSError,UnicodeError,ValueError): invalid("Canvas input must be a UTF-8 JSON object.")
+    if name in ("generate", "retry") and not (payload.get("quote_fingerprint") or "expected_credits" in payload):
+        invalid("Include the accepted video quote or the confirmed per-request image price.")
     suffix = {"edit":"/commands", "quote":"/quotes", "generate":"/generations"}.get(name)
     if name == "retry": suffix=f"/jobs/{validate_resource_id(args.job_id,'job')}/retry"
     if suffix is None: invalid()

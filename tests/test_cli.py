@@ -19,6 +19,11 @@ from _client import ClientConfig, LumenflowError
 import lumenflow as cli
 
 
+FINGERPRINT = "spq1.1800000120." + "b" * 64
+PARSE_CONSENT = ["--confirm-parse", "--parse-quote-fingerprint", FINGERPRINT]
+GENERATION_CONSENT = ["--confirm-generation", "--selection-id", "a" * 64, "--quote-fingerprint", FINGERPRINT]
+
+
 class FakeClient:
     def __init__(
         self,
@@ -50,13 +55,22 @@ class FakeClient:
             "project_url": "https://lumenflow.example/projects/prj_123",
         }
 
+    def parse_quote(self, project_id: str) -> dict:
+        self.calls.append(("parse_quote", project_id))
+        return {"total_credits": 12, "quote_fingerprint": FINGERPRINT}
+
+    def generation_quote(self, project_id: str, selection_id=None) -> dict:
+        self.calls.append(("generation_quote", project_id, selection_id))
+        return {"total_credits": 8, "selection_id": "a" * 64, "quote_fingerprint": FINGERPRINT}
+
     def parse_project(
         self,
         project_id: str,
         *,
+        quote_fingerprint: str,
         idempotency_key: str | None = None,
     ) -> dict:
-        self.calls.append(("parse", project_id, idempotency_key))
+        self.calls.append(("parse", project_id, idempotency_key, quote_fingerprint))
         return {"project_id": project_id, "status": "parsing"}
 
     def progress(self, project_id: str) -> dict:
@@ -196,9 +210,30 @@ class CliInputTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_workflow_generate_alone_pauses_at_parse_quote(self):
+        client = FakeClient()
+        result = cli.run_workflow(client, workflow_args("--generate"))
+        self.assertEqual(result["awaiting_confirmation"], "parse")
+        self.assertEqual([c[0] for c in client.calls], ["create", "parse_quote"])
+
+    def test_accepting_parse_only_pauses_at_generation_quote(self):
+        client = FakeClient(progress=[{"status": "ready"}])
+        result = cli.run_workflow(client, workflow_args("--generate", *PARSE_CONSENT))
+        self.assertEqual(result["awaiting_confirmation"], "generation")
+        self.assertEqual([c[0] for c in client.calls], ["create", "parse", "progress", "generation_quote"])
+
+    def test_single_stage_requires_both_quote_and_confirmation(self):
+        for command, flag in [("parse", "--confirm-parse"), ("generate", "--confirm-generation")]:
+            for args in ([], [flag], ["--quote-fingerprint", FINGERPRINT]):
+                client = FakeClient()
+                options = cli.build_parser().parse_args([command, "prj_test", "--idempotency-key", "original-key", *args])
+                with self.subTest(command=command, args=args), self.assertRaises(LumenflowError):
+                    cli.execute(options, client)
+                self.assertEqual(client.calls, [])
+
     def test_workflow_stops_after_parse_without_explicit_generation(self) -> None:
         client = FakeClient(progress=[{"status": "ready"}])
-        args = workflow_args()
+        args = workflow_args(*PARSE_CONSENT)
 
         result = cli.run_workflow(
             client,
@@ -213,7 +248,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_explicit_generation_waits_for_completion(self) -> None:
         client = FakeClient(progress=[{"status": "ready"}, {"status": "completed"}])
-        args = workflow_args("--generate")
+        args = workflow_args("--generate", *PARSE_CONSENT, *GENERATION_CONSENT)
 
         result = cli.run_workflow(
             client,
@@ -233,6 +268,7 @@ class WorkflowTests(unittest.TestCase):
             "--generate",
             "--idempotency-key",
             "workflow-123456",
+            *PARSE_CONSENT, *GENERATION_CONSENT,
         )
 
         cli.run_workflow(
@@ -260,7 +296,7 @@ class WorkflowTests(unittest.TestCase):
         self,
     ) -> None:
         client = FakeClient(progress=[{"status": "parsing"}])
-        args = workflow_args("--max-wait", "1")
+        args = workflow_args("--max-wait", "1", *PARSE_CONSENT)
         times = iter([0.0, 1.0])
 
         result = cli.run_workflow(
@@ -276,7 +312,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_failed_parse_returns_public_failure(self) -> None:
         client = FakeClient(progress=[{"status": "parse_failed"}])
-        args = workflow_args()
+        args = workflow_args(*PARSE_CONSENT)
 
         with self.assertRaises(LumenflowError) as caught:
             cli.run_workflow(
@@ -304,7 +340,7 @@ class Seedance25WorkflowTests(unittest.TestCase):
     def test_workflow_uses_separate_assets_jobs_and_stable_keys(self) -> None:
         client = FakeClient(seedance_jobs=[{"job_id": "swj_123", "status": "completed"}])
         args = seedance25_workflow_args(
-            "--confirm-generation",
+            "--confirm-generation", "--quote-fingerprint", FINGERPRINT,
             "--reference",
             "/tmp/character.png",
             "--idempotency-key",
@@ -329,7 +365,7 @@ class Seedance25WorkflowTests(unittest.TestCase):
 
     def test_unknown_job_state_is_blocked(self) -> None:
         client = FakeClient(seedance_jobs=[{"job_id": "swj_123", "status": "provider_running"}])
-        args = seedance25_workflow_args("--confirm-generation")
+        args = seedance25_workflow_args("--confirm-generation", "--quote-fingerprint", FINGERPRINT)
 
         with self.assertRaises(LumenflowError) as caught:
             cli.run_seedance25_workflow(

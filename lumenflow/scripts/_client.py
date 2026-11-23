@@ -36,6 +36,7 @@ try:
         validate_download_url,
         validate_idempotency_key,
         validate_public_response,
+        require_quote,
         validate_request_payload,
         validate_resource_id,
     )
@@ -50,6 +51,7 @@ except ImportError:
         validate_download_url,
         validate_idempotency_key,
         validate_public_response,
+        require_quote,
         validate_request_payload,
         validate_resource_id,
     )
@@ -242,17 +244,22 @@ class LumenflowClient:
             idempotency_key=validate_idempotency_key(idempotency_key),
         )
 
+    def parse_quote(self, project_id: str) -> Any:
+        project_id = validate_resource_id(project_id, "project")
+        return self._request("GET", f"/projects/{project_id}/parse-quote")
+
     def parse_project(
         self,
         project_id: str,
         *,
+        quote_fingerprint: str | None = None,
         idempotency_key: str | None = None,
     ) -> Any:
         project_id = validate_resource_id(project_id, "project")
         return self._request(
             "POST",
             f"/projects/{quote(project_id, safe='')}/parse",
-            payload={},
+            payload={"quote_fingerprint": require_quote(quote_fingerprint)},
             idempotency_key=validate_idempotency_key(idempotency_key),
         )
 
@@ -267,13 +274,15 @@ class LumenflowClient:
         project_id = validate_resource_id(project_id, "project")
         return self._request("GET", f"/projects/{quote(project_id, safe='')}/models")
 
-    def generation_quote(self, project_id: str, selection_id: str, *, scene_ids: list[str] | None = None, retry_failed: bool = False) -> Any:
+    def generation_quote(self, project_id: str, selection_id: str | None = None, *, scene_ids: list[str] | None = None, retry_failed: bool = False) -> Any:
         project_id = validate_resource_id(project_id, "project")
-        if not re.fullmatch(r"[a-f0-9]{64}",selection_id):
+        if selection_id is not None and not re.fullmatch(r"[a-f0-9]{64}",selection_id):
             raise LumenflowError("invalid_input", "Use a selection ID from the current project model list.")
         if scene_ids and retry_failed:
             raise LumenflowError("invalid_input", "Choose selected scenes or failed-scene retry.")
-        payload = {"mode":"selected" if scene_ids else "retry_failed" if retry_failed else "all", "selection_id":selection_id}
+        payload = {"mode":"selected" if scene_ids else "retry_failed" if retry_failed else "all"}
+        if selection_id is not None:
+            payload["selection_id"] = selection_id
         if scene_ids: payload["scene_ids"] = [validate_resource_id(s,"scene") for s in scene_ids]
         return self._request("POST", f"/projects/{quote(project_id, safe='')}/quotes", payload=payload)
 
@@ -305,12 +314,9 @@ class LumenflowClient:
             payload = {"mode": "retry_failed"}
         else:
             payload = {"mode": "all"}
-        if selection_id is not None:
-            if not re.fullmatch(r"[a-f0-9]{64}",selection_id) or not isinstance(quote_fingerprint,str) or not re.fullmatch(r"spq1\.\d{10}\.[a-f0-9]{64}",quote_fingerprint):
-                raise LumenflowError("invalid_input", "Selected-model generation requires the current confirmed quote.")
-            payload.update(selection_id=selection_id, quote_fingerprint=quote_fingerprint)
-        elif quote_fingerprint is not None:
-            raise LumenflowError("invalid_input", "A quote requires its model selection.")
+        if not isinstance(selection_id, str) or not re.fullmatch(r"[a-f0-9]{64}", selection_id):
+            raise LumenflowError("invalid_input", "Use the model selection from the confirmed generation quote.")
+        payload.update(selection_id=selection_id, quote_fingerprint=require_quote(quote_fingerprint))
         return self._request(
             "POST",
             f"/projects/{quote(project_id, safe='')}/generations",
@@ -381,6 +387,10 @@ class LumenflowClient:
             idempotency_key=validate_idempotency_key(idempotency_key),
         )
 
+    def seedance25_quote(self, duration_seconds: int, aspect_ratio: str) -> Any:
+        return self._request("POST", "/workbenches/seedance-2.5/quotes",
+                             payload={"duration_seconds": duration_seconds, "aspect_ratio": aspect_ratio})
+
     def seedance25_create_job(
         self,
         *,
@@ -388,6 +398,7 @@ class LumenflowClient:
         duration_seconds: int,
         aspect_ratio: str,
         asset_ids: list[str] | None = None,
+        quote_fingerprint: str | None = None,
         idempotency_key: str | None = None,
     ) -> Any:
         return self._request(
@@ -395,6 +406,7 @@ class LumenflowClient:
             "/workbenches/seedance-2.5/jobs",
             payload={
                 "prompt": prompt,
+                "quote_fingerprint": require_quote(quote_fingerprint),
                 "duration_seconds": duration_seconds,
                 "aspect_ratio": aspect_ratio,
                 "asset_ids": [
@@ -485,6 +497,9 @@ class LumenflowClient:
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
 
+        credential = self.config.api_key
+        if credential in path or (request_body and credential.encode("ascii") in request_body):
+            raise LumenflowError("invalid_input", "A credential cannot be used as API input.")
         request = Request(
             f"{self.config.base_url}{path}",
             data=request_body,
@@ -612,7 +627,8 @@ def _public_http_error(exc: HTTPError, api_key: str, *, deadline: float, monoton
     code = candidate if isinstance(candidate, str) and candidate in PUBLIC_ERROR_CODES and api_key not in candidate else _default_error_code(status)
     request_id = _safe_request_id(error.get("request_id"), api_key) or request_id
     retriable = status in RETRYABLE_STATUS_CODES and code in {"rate_limited", "service_unavailable", "result_not_ready"} and error.get("retriable", True) is not False
-    return LumenflowError(code, _default_error_message(status), status=status,
+    message = "Request a new quote and wait for confirmation." if code == "quote_changed" else _default_error_message(status)
+    return LumenflowError(code, message, status=status,
                          retriable=retriable, request_id=request_id, retry_after=retry_after)
 
 
